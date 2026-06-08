@@ -1,0 +1,9 @@
+.env
+documents/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.cer
+*.key
