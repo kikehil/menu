@@ -16,9 +16,29 @@ async def login_efirma(page: Page):
     await page.wait_for_selector("text=Acceso por contraseña", timeout=30_000)
     await _snap(page, "01_login")
 
+    # Debug: imprimir todos los botones visibles
+    btns_text = await page.evaluate("""
+        () => Array.from(document.querySelectorAll('button, input[type=button], input[type=submit], a'))
+             .map(e => e.tagName + ':' + (e.innerText || e.value || e.textContent || '').trim())
+             .filter(t => t.split(':')[1])
+    """)
+    print(f"[DEBUG] Elementos clicables: {btns_text}")
+
     # Clic en el botón "e.firma" para cambiar al formulario de e.firma
-    await page.click("button:has-text('e.firma'), input[value='e.firma']")
-    print("[DEBUG] Clic en botón e.firma")
+    clicked = await page.evaluate("""
+        () => {
+            const els = Array.from(document.querySelectorAll('button, input[type=button], input[type=submit], a'));
+            for (const el of els) {
+                const txt = (el.innerText || el.value || el.textContent || '').trim();
+                if (txt.toLowerCase().includes('e.firma') || txt.toLowerCase().includes('efirma')) {
+                    el.click();
+                    return 'clicked: ' + txt;
+                }
+            }
+            return 'not found';
+        }
+    """)
+    print(f"[DEBUG] Click resultado: {clicked}")
 
     # Esperar el formulario de e.firma (campo Certificado)
     await page.wait_for_selector("text=Certificado", timeout=30_000)
