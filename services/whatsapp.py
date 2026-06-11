@@ -9,11 +9,12 @@ BASE = f"{EVOLUTION_API_URL}/message"
 
 async def send_text(number: str, text: str):
     async with httpx.AsyncClient(timeout=30) as client:
-        await client.post(
+        r = await client.post(
             f"{BASE}/sendText/{EVOLUTION_INSTANCE}",
             headers=HEADERS,
             json={"number": number, "text": text},
         )
+        print(f"[DEBUG] send_text → {r.status_code} {r.text[:300]}")
 
 
 async def send_document(number: str, file_path: str, caption: str):

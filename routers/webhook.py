@@ -41,17 +41,23 @@ async def webhook(request: Request):
     payload = await request.json()
 
     event = payload.get("event", "").upper().replace(".", "_")
+    print(f"[DEBUG] event={event}")
+
     if event != "MESSAGES_UPSERT":
+        print(f"[DEBUG] ignorado, evento no es MESSAGES_UPSERT")
         return {"ok": True}
 
     result = _extract(payload)
+    print(f"[DEBUG] extract={result}")
     if not result:
         return {"ok": True}
 
     phone, text = result
+    print(f"[DEBUG] phone={phone!r} text={text!r}")
 
     # Solo responder a números autorizados
     if AUTHORIZED_NUMBERS and phone not in AUTHORIZED_NUMBERS:
+        print(f"[DEBUG] número {phone} no autorizado. Autorizados: {AUTHORIZED_NUMBERS}")
         return {"ok": True}
 
     state = sess.get_state(phone)
