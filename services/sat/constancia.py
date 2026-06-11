@@ -26,8 +26,12 @@ async def descargar_constancia() -> str:
             ),
         )
         page = await context.new_page()
-        from playwright_stealth import stealth_async
-        await stealth_async(page)
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['es-MX','es','en-US']});
+            window.chrome = {runtime: {}};
+        """)
 
         await page.goto(URL, wait_until="networkidle", timeout=60_000)
         snap = os.path.abspath(f"{DOCUMENTS_PATH}/debug_01_constancia.png")
