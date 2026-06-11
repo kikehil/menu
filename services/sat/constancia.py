@@ -8,6 +8,12 @@ LOGIN_URL = "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
 CONSTANCIA_URL = "https://wwwmat.sat.gob.mx/aplicacion/operacion/66862/constancia-de-situacion-fiscal"
 
 
+async def _snap(page, name):
+    path = os.path.abspath(f"{DOCUMENTS_PATH}/debug_{name}.png")
+    await page.save_screenshot(path)
+    print(f"[DEBUG] snap → {path}")
+
+
 async def descargar_constancia() -> str:
     os.makedirs(DOCUMENTS_PATH, exist_ok=True)
     fecha = datetime.now().strftime("%Y-%m")
@@ -16,66 +22,66 @@ async def descargar_constancia() -> str:
     browser = await uc.start(headless=False, lang="es-MX")
     try:
         page = await browser.get(LOGIN_URL)
-        await asyncio.sleep(3)
-        print(f"[DEBUG] Login page: {page.url}")
+        await asyncio.sleep(4)
+        await _snap(page, "01_login")
+        print(f"[DEBUG] URL inicial: {page.url}")
 
-        # Clic en botón "e.firma" para cambiar al formulario de e.firma
+        # Clic en "e.firma" para cambiar de formulario
         efirma_btn = await page.find("e.firma", best_match=True, timeout=15)
         await efirma_btn.click()
-        await asyncio.sleep(2)
-        print("[DEBUG] Clic en e.firma — esperando formulario")
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_01_efirma_form.png")
+        await asyncio.sleep(4)
+        await _snap(page, "02_efirma_form")
+        print("[DEBUG] Formulario e.firma cargado")
 
-        # Subir .cer — puede ser file input o text input con el path
-        file_inputs = await page.select_all("input[type='file']")
-        print(f"[DEBUG] file inputs: {len(file_inputs)}")
+        # Listar todos los inputs visibles para debug
+        all_inputs = await page.select_all("input")
+        print(f"[DEBUG] Total inputs en formulario: {len(all_inputs)}")
+        for i, inp in enumerate(all_inputs):
+            t = await inp.get_attribute("type") or "text"
+            ph = await inp.get_attribute("placeholder") or ""
+            print(f"[DEBUG]   input[{i}] type={t!r} placeholder={ph!r}")
 
-        if len(file_inputs) >= 2:
-            await file_inputs[0].send_file(SAT_EFIRMA_CER_PATH)
-            await asyncio.sleep(1)
-            await file_inputs[1].send_file(SAT_EFIRMA_KEY_PATH)
-            print("[DEBUG] Archivos subidos via file input")
-        else:
-            # El portal MAT puede usar text inputs con la ruta del archivo
-            cer_input = await page.select("input[placeholder*='certificado'], input[placeholder*='cer']", timeout=10)
-            await cer_input.send_keys(SAT_EFIRMA_CER_PATH)
-            key_input = await page.select("input[placeholder*='llave'], input[placeholder*='key']", timeout=10)
-            await key_input.send_keys(SAT_EFIRMA_KEY_PATH)
-            print("[DEBUG] Rutas escritas en text inputs")
+        # Llenar campos de texto con las rutas
+        for inp in all_inputs:
+            ph = (await inp.get_attribute("placeholder") or "").lower()
+            t = (await inp.get_attribute("type") or "text").lower()
+            if "certificado" in ph or "cer" in ph:
+                await inp.send_keys(SAT_EFIRMA_CER_PATH)
+                print(f"[DEBUG] .cer → {SAT_EFIRMA_CER_PATH}")
+            elif "llave" in ph or "key" in ph or "privada" in ph:
+                await inp.send_keys(SAT_EFIRMA_KEY_PATH)
+                print(f"[DEBUG] .key → {SAT_EFIRMA_KEY_PATH}")
+            elif t == "password":
+                await inp.send_keys(SAT_EFIRMA_PASSWORD)
+                print("[DEBUG] password ingresada")
+            elif "rfc" in ph.lower():
+                await inp.send_keys(SAT_RFC)
+                print(f"[DEBUG] RFC → {SAT_RFC}")
 
-        # Contraseña de clave privada
-        pwd = await page.select("input[placeholder*='Contraseña'], input[type='password']", timeout=10)
-        await pwd.send_keys(SAT_EFIRMA_PASSWORD)
+        await asyncio.sleep(1)
+        await _snap(page, "03_filled")
 
-        # RFC
-        try:
-            rfc_input = await page.select("input[placeholder='RFC']", timeout=5)
-            await rfc_input.send_keys(SAT_RFC)
-        except Exception:
-            pass
-
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_02_filled.png")
-
-        # Enviar
+        # Clic en Enviar
         enviar = await page.find("Enviar", best_match=True, timeout=10)
         await enviar.click()
         await asyncio.sleep(6)
         print(f"[DEBUG] Post-login URL: {page.url}")
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_03_post_login.png")
+        await _snap(page, "04_post_login")
 
         # Navegar a constancia
         page = await browser.get(CONSTANCIA_URL)
         await asyncio.sleep(5)
+        await _snap(page, "05_constancia")
         print(f"[DEBUG] Constancia URL: {page.url}")
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_04_constancia.png")
 
-        # Descargar PDF
+        # Buscar botón Generar/Descargar
         try:
             generar = await page.find("Generar", best_match=True, timeout=15)
             await generar.click()
             await asyncio.sleep(5)
-        except Exception:
-            pass
+            await _snap(page, "06_post_generar")
+        except Exception as e:
+            print(f"[DEBUG] No se encontró botón Generar: {e}")
 
         content = await page.get_content()
         with open(destino, "wb") as f:
