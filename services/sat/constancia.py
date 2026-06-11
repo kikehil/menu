@@ -22,7 +22,9 @@ async def descargar_constancia() -> str:
     browser = await uc.start(headless=False, lang="es-MX")
     try:
         page = await browser.get(LOGIN_URL)
-        await asyncio.sleep(4)
+        # Esperar a que el formulario esté visible
+        await page.find("Acceso por contraseña", timeout=30)
+        await asyncio.sleep(2)
         await _snap(page, "01_login")
         print(f"[DEBUG] URL inicial: {page.url}")
 
@@ -36,7 +38,9 @@ async def descargar_constancia() -> str:
             }
         """)
         print(f"[DEBUG] Botón e.firma: {result}")
-        await asyncio.sleep(4)
+        # Esperar a que cargue el formulario de e.firma
+        await page.find("Certificado", timeout=20)
+        await asyncio.sleep(2)
         await _snap(page, "02_efirma_form")
         print("[DEBUG] Formulario e.firma cargado")
 
