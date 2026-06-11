@@ -13,19 +13,31 @@ async def descargar_constancia() -> str:
     destino = os.path.abspath(f"{DOCUMENTS_PATH}/constancia_{fecha}.pdf")
 
     async with async_playwright() as p:
-        # headless=False para ver qué pasa en el portal del SAT
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(accept_downloads=True)
+        browser = await p.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        context = await browser.new_context(
+            accept_downloads=True,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        )
         page = await context.new_page()
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         await page.goto(URL, wait_until="networkidle", timeout=60_000)
+        snap = os.path.abspath(f"{DOCUMENTS_PATH}/debug_01_constancia.png")
+        await page.screenshot(path=snap, full_page=True)
+        print(f"[DEBUG] URL={page.url}  title={await page.title()}")
 
-        # Captura pantalla para debug
-        screenshot = os.path.abspath(f"{DOCUMENTS_PATH}/debug_sat.png")
-        await page.screenshot(path=screenshot)
-        print(f"[DEBUG] Captura guardada en: {screenshot}")
-        print(f"[DEBUG] URL actual: {page.url}")
-        print(f"[DEBUG] Título: {await page.title()}")
+        # Imprimir iframes encontrados
+        frames = page.frames
+        print(f"[DEBUG] frames en la página: {len(frames)}")
+        for i, f in enumerate(frames):
+            print(f"[DEBUG]  frame[{i}] url={f.url}")
 
         await login_efirma(page)
 
