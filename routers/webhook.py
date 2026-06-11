@@ -40,7 +40,8 @@ def _extract(payload: dict) -> tuple[str, str] | None:
 async def webhook(request: Request):
     payload = await request.json()
 
-    if payload.get("event") != "messages.upsert":
+    event = payload.get("event", "").upper().replace(".", "_")
+    if event != "MESSAGES_UPSERT":
         return {"ok": True}
 
     result = _extract(payload)
