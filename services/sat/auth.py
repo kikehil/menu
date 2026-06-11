@@ -1,71 +1,57 @@
 import os
-from playwright.async_api import Page
+from playwright.async_api import Page, BrowserContext
 from config import SAT_EFIRMA_CER_PATH, SAT_EFIRMA_KEY_PATH, SAT_EFIRMA_PASSWORD, DOCUMENTS_PATH
+
+LOGIN_URL = "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
 
 
 async def login_efirma(page: Page):
     """
-    Asume que la página ya fue redirigida al login del SAT (NIDP).
-    Espera las tarjetas de autenticación, hace clic en e.firma y llena las credenciales.
+    Inicia sesión en el portal MAT del SAT usando e.firma.
+    Deja la sesión activa en el contexto del navegador.
     """
-    # Esperar a que la página esté lista
-    await page.wait_for_load_state("domcontentloaded", timeout=30_000)
+    await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
 
-    await _snap(page, "01_login_page")
+    # Esperar a que cargue el formulario de acceso por contraseña
+    await page.wait_for_selector("text=Acceso por contraseña", timeout=30_000)
+    await _snap(page, "01_login")
 
-    current_url = page.url
-    print(f"[DEBUG] URL en login_efirma: {current_url}")
+    # Clic en el botón "e.firma" para cambiar al formulario de e.firma
+    await page.click("button:has-text('e.firma'), input[value='e.firma']")
+    print("[DEBUG] Clic en botón e.firma")
 
-    # Si estamos en la página de selección de tarjetas, hacer clic en e.firma
-    if "nidp" in current_url:
-        # Esperar a que aparezca algún enlace/botón de autenticación
-        await page.wait_for_function(
-            "document.querySelectorAll('a, button, li').length > 5",
-            timeout=20_000,
-        )
-        await _snap(page, "02_cards_loaded")
+    # Esperar el formulario de e.firma (campo Certificado)
+    await page.wait_for_selector("text=Certificado", timeout=30_000)
+    await _snap(page, "02_efirma_form")
 
-        # Buscar opción e.firma (varios posibles selectores)
-        efirma = page.locator(
-            "a[href*='Efirma'], a[href*='efirma'], a[href*='x509'], "
-            "a:has-text('e.firma'), li:has-text('e.firma'), "
-            "span:has-text('e.firma'), div:has-text('e.firma')"
-        ).first
+    # Subir certificado (.cer) — el botón "Buscar" abre un file input
+    cer_input = page.locator("input[type='file']").nth(0)
+    await cer_input.set_input_files(SAT_EFIRMA_CER_PATH)
+    print("[DEBUG] .cer cargado")
 
-        if await efirma.count() > 0:
-            print("[DEBUG] Clic en e.firma")
-            await efirma.click()
-            await page.wait_for_load_state("networkidle", timeout=30_000)
-            await _snap(page, "03_after_efirma_click")
-        else:
-            # Imprimir todos los enlaces visibles para debug
-            links = await page.eval_on_selector_all("a", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
-            print(f"[DEBUG] enlaces en la página: {links[:20]}")
+    # Subir llave privada (.key)
+    key_input = page.locator("input[type='file']").nth(1)
+    await key_input.set_input_files(SAT_EFIRMA_KEY_PATH)
+    print("[DEBUG] .key cargado")
 
-    # Esperar el formulario de e.firma
-    await page.wait_for_selector("input[type='file']", timeout=30_000)
-    await _snap(page, "04_efirma_form")
-
-    inputs = await page.query_selector_all("input[type='file']")
-    print(f"[DEBUG] {len(inputs)} input[type=file] encontrados")
-    for i, inp in enumerate(inputs):
-        print(f"[DEBUG]  [{i}] accept={await inp.get_attribute('accept')!r} name={await inp.get_attribute('name')!r}")
-
-    if len(inputs) >= 2:
-        await inputs[0].set_input_files(SAT_EFIRMA_CER_PATH)
-        await inputs[1].set_input_files(SAT_EFIRMA_KEY_PATH)
-    elif len(inputs) == 1:
-        # Algunos portales usan un solo input
-        await inputs[0].set_input_files(SAT_EFIRMA_CER_PATH)
-
+    # Contraseña de la clave privada
     await page.fill("input[type='password']", SAT_EFIRMA_PASSWORD)
-    await page.click("button[type='submit'], input[type='submit'], #btnEntrar")
+    print("[DEBUG] Contraseña ingresada")
+
+    await _snap(page, "03_filled")
+
+    # Clic en Enviar
+    await page.click("button:has-text('Enviar'), input[value='Enviar']")
+    print("[DEBUG] Formulario enviado, esperando autenticación...")
+
+    # Esperar la redirección post-login
     await page.wait_for_load_state("networkidle", timeout=60_000)
     print(f"[DEBUG] Post-login URL: {page.url}")
-    await _snap(page, "05_post_login")
+    await _snap(page, "04_post_login")
 
 
 async def _snap(page: Page, name: str):
+    os.makedirs(DOCUMENTS_PATH, exist_ok=True)
     path = os.path.abspath(f"{DOCUMENTS_PATH}/debug_{name}.png")
-    await page.screenshot(path=path)
-    print(f"[DEBUG] screenshot → {path}")
+    await page.screenshot(path=path, full_page=True)
+    print(f"[DEBUG] snap → {path}")

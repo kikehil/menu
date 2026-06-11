@@ -1,41 +1,41 @@
 import os
 from datetime import datetime
 from playwright.async_api import async_playwright
-from .auth import login_efirma
+from .auth import login_efirma, _snap
 from config import DOCUMENTS_PATH
 
-URL = "https://www.sat.gob.mx/consultas/59274/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales"
+OPINION_URL = "https://wwwmat.sat.gob.mx/aplicacion/operacion/22413/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales"
 
 
 async def descargar_opinion() -> str:
-    """Descarga la Opinión de Cumplimiento y retorna la ruta del PDF."""
+    """Inicia sesión con e.firma y descarga la Opinión de Cumplimiento."""
     os.makedirs(DOCUMENTS_PATH, exist_ok=True)
     fecha = datetime.now().strftime("%Y-%m")
     destino = os.path.abspath(f"{DOCUMENTS_PATH}/opinion_cumplimiento_{fecha}.pdf")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=False)
         context = await browser.new_context(accept_downloads=True)
         page = await context.new_page()
 
-        await page.goto(URL, wait_until="networkidle", timeout=60_000)
         await login_efirma(page)
 
-        # Esperar que cargue la opinión
-        await page.wait_for_selector(
-            "button:has-text('Imprimir'), button:has-text('Descargar'), a:has-text('Opinión')",
-            timeout=30_000,
-        )
+        await page.goto(OPINION_URL, wait_until="networkidle", timeout=60_000)
+        await _snap(page, "05_opinion")
+        print(f"[DEBUG] Opinión URL: {page.url}")
 
-        # Intentar descarga directa; si no, imprimir a PDF
-        dl_btn = page.locator("button:has-text('Descargar'), a[href*='.pdf']").first
-        if await dl_btn.count() > 0:
-            async with page.expect_download() as dl_info:
-                await dl_btn.click()
+        try:
+            async with page.expect_download(timeout=30_000) as dl_info:
+                await page.click(
+                    "button:has-text('Generar'), a:has-text('Generar'), "
+                    "button:has-text('Descargar'), a:has-text('Descargar'), "
+                    "button:has-text('Imprimir'), a:has-text('Imprimir')"
+                )
             download = await dl_info.value
             await download.save_as(destino)
-        else:
-            # SAT muestra la opinión en pantalla → guardar como PDF
+            print(f"[DEBUG] PDF descargado: {destino}")
+        except Exception as e:
+            print(f"[DEBUG] No hubo descarga directa ({e}), generando PDF de la página")
             await page.pdf(path=destino, format="Letter")
 
         await browser.close()
