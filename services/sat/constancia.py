@@ -28,16 +28,22 @@ async def descargar_constancia() -> str:
         await _snap(page, "01_login")
         print(f"[DEBUG] URL inicial: {page.url}")
 
-        # Clic en botón "e.firma" via JavaScript (más confiable que iterar elementos)
-        result = await page.evaluate("""
-            () => {
-                const all = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
-                const btn = all.find(b => (b.innerText || b.value || '').trim() === 'e.firma');
-                if (btn) { btn.click(); return 'clicked'; }
-                return 'not found: ' + all.map(b => b.innerText || b.value).join(' | ');
-            }
-        """)
-        print(f"[DEBUG] Botón e.firma: {result}")
+        # Obtener todos los botones y mostrar su texto para debug
+        all_btns = await page.select_all("button")
+        print(f"[DEBUG] Total botones: {len(all_btns)}")
+        for i, b in enumerate(all_btns):
+            txt = await b.get_attribute("textContent") or ""
+            val = await b.get_attribute("value") or ""
+            print(f"[DEBUG]  btn[{i}] textContent={txt.strip()!r} value={val!r}")
+
+        # Clic en el primer botón que no sea "Enviar" (debe ser "e.firma")
+        for b in all_btns:
+            txt = (await b.get_attribute("textContent") or "").strip()
+            if txt and "enviar" not in txt.lower() and "contraseña" not in txt.lower():
+                await b.click()
+                print(f"[DEBUG] Clic en botón: {txt!r}")
+                break
+
         # Esperar a que cargue el formulario de e.firma
         await page.find("Certificado", timeout=20)
         await asyncio.sleep(2)
