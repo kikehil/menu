@@ -2,10 +2,10 @@ import os
 import asyncio
 from datetime import datetime
 import nodriver as uc
-from config import DOCUMENTS_PATH, SAT_EFIRMA_CER_PATH, SAT_EFIRMA_KEY_PATH, SAT_EFIRMA_PASSWORD
+from config import DOCUMENTS_PATH, SAT_EFIRMA_CER_PATH, SAT_EFIRMA_KEY_PATH, SAT_EFIRMA_PASSWORD, SAT_RFC
 
-SAT_HOME = "https://www.sat.gob.mx/inicio"
-URL_CONSTANCIA = "https://www.sat.gob.mx/aplicacion/operacion/66862/constancia-de-situacion-fiscal"
+LOGIN_URL = "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
+CONSTANCIA_URL = "https://wwwmat.sat.gob.mx/aplicacion/operacion/66862/constancia-de-situacion-fiscal"
 
 
 async def descargar_constancia() -> str:
@@ -15,80 +15,71 @@ async def descargar_constancia() -> str:
 
     browser = await uc.start(headless=False, lang="es-MX")
     try:
-        # 1. Ir al inicio del SAT para establecer sesión/cookies
-        page = await browser.get(SAT_HOME)
-        await asyncio.sleep(4)
-        print(f"[DEBUG] Inicio SAT URL={page.url} title={await page.title()}")
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_01_inicio.png")
+        page = await browser.get(LOGIN_URL)
+        await asyncio.sleep(3)
+        print(f"[DEBUG] Login page: {page.url}")
 
-        # 2. Buscar y clic en botón de inicio de sesión
-        try:
-            login_btn = await page.find("Iniciar sesión", best_match=True, timeout=10)
-            await login_btn.click()
-            await asyncio.sleep(3)
-            print("[DEBUG] Clic en Iniciar sesión")
-        except Exception:
-            try:
-                login_btn = await page.find("Entrar", best_match=True, timeout=5)
-                await login_btn.click()
-                await asyncio.sleep(3)
-                print("[DEBUG] Clic en Entrar")
-            except Exception as e:
-                print(f"[DEBUG] No encontré botón login: {e}")
-
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_02_post_login_click.png")
-        print(f"[DEBUG] URL post-click: {page.url}")
-
-        # 3. Seleccionar e.firma si aparece la selección
+        # Clic en botón "e.firma" para cambiar al formulario de e.firma
+        efirma_btn = await page.find("e.firma", best_match=True, timeout=15)
+        await efirma_btn.click()
         await asyncio.sleep(2)
-        try:
-            efirma = await page.find("e.firma", best_match=True, timeout=10)
-            await efirma.click()
-            await asyncio.sleep(3)
-            print("[DEBUG] Clic en e.firma")
-        except Exception as e:
-            print(f"[DEBUG] No se encontró e.firma: {e}")
+        print("[DEBUG] Clic en e.firma — esperando formulario")
+        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_01_efirma_form.png")
 
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_03_efirma.png")
+        # Subir .cer — puede ser file input o text input con el path
+        file_inputs = await page.select_all("input[type='file']")
+        print(f"[DEBUG] file inputs: {len(file_inputs)}")
 
-        # 4. Subir archivos de e.firma
-        await asyncio.sleep(2)
-        try:
-            file_inputs = await page.select_all("input[type='file']")
-            print(f"[DEBUG] {len(file_inputs)} inputs file encontrados")
-            if len(file_inputs) >= 1:
-                await file_inputs[0].send_file(SAT_EFIRMA_CER_PATH)
-                print("[DEBUG] .cer subido")
-            if len(file_inputs) >= 2:
-                await file_inputs[1].send_file(SAT_EFIRMA_KEY_PATH)
-                print("[DEBUG] .key subido")
-        except Exception as e:
-            print(f"[DEBUG] Error subiendo archivos: {e}")
-
-        # 5. Contraseña y submit
-        try:
-            pwd = await page.select("input[type='password']", timeout=10)
-            await pwd.send_keys(SAT_EFIRMA_PASSWORD)
+        if len(file_inputs) >= 2:
+            await file_inputs[0].send_file(SAT_EFIRMA_CER_PATH)
             await asyncio.sleep(1)
-            submit = await page.select("button[type='submit'], input[type='submit']", timeout=10)
-            await submit.click()
-            await asyncio.sleep(5)
-            print(f"[DEBUG] Post-auth URL: {page.url}")
-        except Exception as e:
-            print(f"[DEBUG] Error en autenticación: {e}")
+            await file_inputs[1].send_file(SAT_EFIRMA_KEY_PATH)
+            print("[DEBUG] Archivos subidos via file input")
+        else:
+            # El portal MAT puede usar text inputs con la ruta del archivo
+            cer_input = await page.select("input[placeholder*='certificado'], input[placeholder*='cer']", timeout=10)
+            await cer_input.send_keys(SAT_EFIRMA_CER_PATH)
+            key_input = await page.select("input[placeholder*='llave'], input[placeholder*='key']", timeout=10)
+            await key_input.send_keys(SAT_EFIRMA_KEY_PATH)
+            print("[DEBUG] Rutas escritas en text inputs")
 
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_04_post_auth.png")
+        # Contraseña de clave privada
+        pwd = await page.select("input[placeholder*='Contraseña'], input[type='password']", timeout=10)
+        await pwd.send_keys(SAT_EFIRMA_PASSWORD)
 
-        # 6. Navegar a constancia
-        page = await browser.get(URL_CONSTANCIA)
-        await asyncio.sleep(4)
+        # RFC
+        try:
+            rfc_input = await page.select("input[placeholder='RFC']", timeout=5)
+            await rfc_input.send_keys(SAT_RFC)
+        except Exception:
+            pass
+
+        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_02_filled.png")
+
+        # Enviar
+        enviar = await page.find("Enviar", best_match=True, timeout=10)
+        await enviar.click()
+        await asyncio.sleep(6)
+        print(f"[DEBUG] Post-login URL: {page.url}")
+        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_03_post_login.png")
+
+        # Navegar a constancia
+        page = await browser.get(CONSTANCIA_URL)
+        await asyncio.sleep(5)
         print(f"[DEBUG] Constancia URL: {page.url}")
-        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_05_constancia.png")
+        await page.save_screenshot(f"{DOCUMENTS_PATH}/debug_04_constancia.png")
 
-        # 7. Descargar PDF
-        pdf_bytes = await page.get_content()
+        # Descargar PDF
+        try:
+            generar = await page.find("Generar", best_match=True, timeout=15)
+            await generar.click()
+            await asyncio.sleep(5)
+        except Exception:
+            pass
+
+        content = await page.get_content()
         with open(destino, "wb") as f:
-            f.write(pdf_bytes.encode() if isinstance(pdf_bytes, str) else pdf_bytes)
+            f.write(content.encode() if isinstance(content, str) else content)
 
     finally:
         await browser.stop()
