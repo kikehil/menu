@@ -26,9 +26,22 @@ async def descargar_constancia() -> str:
         await _snap(page, "01_login")
         print(f"[DEBUG] URL inicial: {page.url}")
 
-        # Clic en "e.firma" para cambiar de formulario
-        efirma_btn = await page.find("e.firma", best_match=True, timeout=15)
-        await efirma_btn.click()
+        # Clic en BOTÓN "e.firma" (no el label "e.firma portable:")
+        # Buscar todos los botones y hacer clic en el que diga exactamente "e.firma"
+        btns = await page.select_all("button, input[type='button'], input[type='submit'], a")
+        print(f"[DEBUG] Botones encontrados: {len(btns)}")
+        clicked = False
+        for btn in btns:
+            txt = (await btn.get_attribute("innerText") or await btn.get_attribute("value") or "").strip()
+            print(f"[DEBUG]  btn text={txt!r}")
+            if txt.lower() == "e.firma":
+                await btn.click()
+                clicked = True
+                print("[DEBUG] Clic en botón e.firma")
+                break
+        if not clicked:
+            print("[DEBUG] No se encontró botón exacto, intentando js click")
+            await page.evaluate("document.querySelectorAll('button').forEach(b => { if(b.innerText.trim()==='e.firma') b.click() })")
         await asyncio.sleep(4)
         await _snap(page, "02_efirma_form")
         print("[DEBUG] Formulario e.firma cargado")
@@ -43,8 +56,11 @@ async def descargar_constancia() -> str:
 
         # Llenar campos de texto con las rutas
         for inp in all_inputs:
-            ph = (await inp.get_attribute("placeholder") or "").lower()
-            t = (await inp.get_attribute("type") or "text").lower()
+            try:
+                ph = (await inp.get_attribute("placeholder") or "").lower()
+                t = (await inp.get_attribute("type") or "text").lower()
+            except Exception:
+                continue
             if "certificado" in ph or "cer" in ph:
                 await inp.send_keys(SAT_EFIRMA_CER_PATH)
                 print(f"[DEBUG] .cer → {SAT_EFIRMA_CER_PATH}")
