@@ -14,7 +14,7 @@ async def descargar_opinion() -> str:
     destino = os.path.abspath(f"{DOCUMENTS_PATH}/opinion_cumplimiento_{fecha}.pdf")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=False, slow_mo=500)
         context = await browser.new_context(accept_downloads=True)
         page = await context.new_page()
 
